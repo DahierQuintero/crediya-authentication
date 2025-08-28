@@ -1,4 +1,4 @@
-package co.com.pragma.model.user;
+package co.com.pragma.model.user.entities;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -9,23 +9,37 @@ public class User {
     private String lastName;
     private String email;
     private String idNumber;
-    private LocalDate dateOfBirth;
+    private LocalDate birthDate;
     private String address;
     private String phone;
+    private Byte roleId;
     private BigDecimal baseSalary;
 
     public User() {
     }
 
-    public User(String idUser, String name, String lastName, String email, String idNumber, LocalDate dateOfBirth, String address, String phone, BigDecimal baseSalary) {
+    public User(String idUser, String name, String lastName, String email, String idNumber, LocalDate birthDate, String address, String phone, Byte roleId, BigDecimal baseSalary) {
         this.idUser = idUser;
         this.name = name;
         this.lastName = lastName;
         this.email = email;
         this.idNumber = idNumber;
-        this.dateOfBirth = dateOfBirth;
+        this.birthDate = birthDate;
         this.address = address;
         this.phone = phone;
+        this.roleId = roleId;
+        this.baseSalary = baseSalary;
+    }
+
+    public User(String name, String lastName, String email, String idNumber, LocalDate birthDate, String address, String phone, Byte roleId, BigDecimal baseSalary) {
+        this.name = name;
+        this.lastName = lastName;
+        this.email = email;
+        this.idNumber = idNumber;
+        this.birthDate = birthDate;
+        this.address = address;
+        this.phone = phone;
+        this.roleId = roleId;
         this.baseSalary = baseSalary;
     }
 
@@ -49,8 +63,8 @@ public class User {
         return idNumber;
     }
 
-    public LocalDate getDateOfBirth() {
-        return dateOfBirth;
+    public LocalDate getBirthDate() {
+        return birthDate;
     }
 
     public String getAddress() {
@@ -59,6 +73,10 @@ public class User {
 
     public String getPhone() {
         return phone;
+    }
+
+    public Byte getRoleId() {
+        return roleId;
     }
 
     public BigDecimal getBaseSalary() {
@@ -90,8 +108,8 @@ public class User {
         return this;
     }
 
-    public User setDateOfBirth(LocalDate dateOfBirth) {
-        this.dateOfBirth = dateOfBirth;
+    public User setBirthDate(LocalDate birthDate) {
+        this.birthDate = birthDate;
         return this;
     }
 
@@ -102,6 +120,11 @@ public class User {
 
     public User setPhone(String phone) {
         this.phone = phone;
+        return this;
+    }
+
+    public User setRoleId(Byte roleId) {
+        this.roleId = roleId;
         return this;
     }
 

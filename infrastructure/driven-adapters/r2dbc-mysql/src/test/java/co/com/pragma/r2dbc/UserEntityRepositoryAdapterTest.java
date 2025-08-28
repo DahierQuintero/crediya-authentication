@@ -1,6 +1,7 @@
 package co.com.pragma.r2dbc;
 
-import co.com.pragma.model.apiuser.User;
+import co.com.pragma.model.user.entities.User;
+import co.com.pragma.r2dbc.entities.UserEntity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -20,7 +21,7 @@ class UserEntityRepositoryAdapterTest {
     // TODO: change four you own tests
 
     @InjectMocks
-    UserEntityRepositoryAdapter repositoryAdapter;
+    IUserEntityRepositoryPortAdapter repositoryAdapter;
 
     @Mock
     UserEntityRepository repository;
@@ -30,8 +31,9 @@ class UserEntityRepositoryAdapterTest {
 
     @Test
     void mustFindValueById() {
+        UserEntity userEntity = new UserEntity();
 
-        when(repository.findById("1")).thenReturn(Mono.just("test"));
+        when(repository.findById("1")).thenReturn(Mono.just(userEntity));
         when(mapper.map("test", Object.class)).thenReturn("test");
 
         Mono<User> result = repositoryAdapter.findById("1");

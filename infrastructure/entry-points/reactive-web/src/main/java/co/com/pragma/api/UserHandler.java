@@ -3,35 +3,87 @@ package co.com.pragma.api;
 import co.com.pragma.api.dto.UserDTO;
 import co.com.pragma.api.helper.ValidationUtil;
 import co.com.pragma.api.mapper.UserMapper;
-import co.com.pragma.usecase.apiuser.UserUseCase;
+import co.com.pragma.usecase.user.IUserUseCase;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
+import reactor.util.context.Context;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class UserHandler {
-    private  final UserUseCase userUseCase;
-    private  final ValidationUtil validator;
+    private final IUserUseCase userUseCase;
+    private final ValidationUtil validator;
+    private final ObjectMapper objectMapper;
 
 
     public Mono<ServerResponse> save(ServerRequest serverRequest) {
-        return serverRequest.bodyToMono(UserDTO.class)
+        String traceId = extractTraceId(serverRequest);
+        log.info("[{}] Received create user request", traceId);
+
+        return serverRequest.bodyToMono(String.class)
+                .doOnNext(body -> log.debug("[{}] Request body: {}", traceId, body))
+                .flatMap(body -> {
+                    try {
+                        UserDTO userDTO = objectMapper.readValue(body, UserDTO.class);
+                        log.debug("[{}] Parsed UserDTO: {}", traceId, userDTO);
+                        return Mono.just(userDTO);
+                    } catch (JsonProcessingException e) {
+                        log.error("[{}] Error parsing request body: {}", traceId, e.getMessage(), e);
+                        return Mono.error(new IllegalArgumentException("Invalid request body: " + e.getMessage()));
+                    }
+                })
                 .flatMap(validator::validate)
                 .map(UserMapper::toUser)
+                .doOnNext(user -> log.debug("[{}] Mapped to User: {}", traceId, user))
                 .flatMap(userUseCase::save)
-                .flatMap(savedUser -> ServerResponse.ok().bodyValue(UserMapper.toUserDTO(savedUser)));
+                .map(UserMapper::toUserDTO)
+                .flatMap(savedUser -> {
+                    log.info("[{}] User created successfully: {}", traceId, savedUser.idNumber());
+                    return ServerResponse
+                            .status(HttpStatus.CREATED)
+                            .bodyValue(savedUser);
+                })
+                .onErrorResume(e -> {
+                    log.error("[{}] Error creating user: {}", traceId, e.getMessage(), e);
+                    return ServerResponse
+                            .status(getHttpStatus(e))
+                            .bodyValue(createErrorResponse(e, traceId));
+                })
+                .contextWrite(Context.of("traceId", traceId));
     }
 
-    public Mono<ServerResponse> listenGETOtherUseCase(ServerRequest serverRequest) {
-        // useCase2.logic();
-        return ServerResponse.ok().bodyValue("");
+    private String extractTraceId(ServerRequest request) {
+        return Objects.requireNonNullElse(
+                request.headers().firstHeader("X-Trace-ID"),
+                "NO_TRACE_ID"
+        );
     }
 
-    public Mono<ServerResponse> listenPOSTUseCase(ServerRequest serverRequest) {
-        // useCase.logic();
-        return ServerResponse.ok().bodyValue("");
+    private HttpStatus getHttpStatus(Throwable e) {
+        if (e instanceof IllegalArgumentException) {
+            return HttpStatus.BAD_REQUEST;
+        }
+        return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+
+    private Map<String, Object> createErrorResponse(Throwable e, String traceId) {
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("code", "ERROR");
+        errorResponse.put("message", e.getMessage());
+        errorResponse.put("traceId", traceId);
+        errorResponse.put("timestamp", java.time.Instant.now().toString());
+        return errorResponse;
     }
 }

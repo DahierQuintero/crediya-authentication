@@ -1,4 +1,4 @@
-package co.com.pragma.ports.output;
+package co.com.pragma.model.user.ports;
 
 import co.com.pragma.model.user.entities.User;
 import reactor.core.publisher.Mono;

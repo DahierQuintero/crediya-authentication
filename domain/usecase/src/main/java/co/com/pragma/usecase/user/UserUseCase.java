@@ -1,4 +1,4 @@
-package co.com.pragma.usecase.apiuser;
+package co.com.pragma.usecase.user;
 
 import co.com.pragma.model.user.entities.User;
 import co.com.pragma.model.user.exceptions.UserAlreadyExistsException;
@@ -6,7 +6,7 @@ import co.com.pragma.model.user.ports.ILoggerPort;
 import co.com.pragma.model.user.ports.IUserRepositoryPort;
 import reactor.core.publisher.Mono;
 
-public class UserUseCase {
+public class UserUseCase implements IUserUseCase{
 
     private final IUserRepositoryPort iUserRepositoryPort;
     private final ILoggerPort logger;
@@ -16,7 +16,7 @@ public class UserUseCase {
         this.logger = logger;
     }
 
-    @Transactional
+    @Override
     public Mono<User> save(User user) {
         return Mono.deferContextual(ctx -> {
             String traceId = ctx.getOrDefault("traceId", "unknown");
