@@ -27,13 +27,13 @@ import org.springframework.transaction.reactive.TransactionalOperator;
 @RequiredArgsConstructor
 public class UseCasesConfig {
 
-        private final IUserRepositoryPort userRepositoryPort;
-        private final ILoggerPort logger;
-        private final TransactionalOperator transactionalOperator;
+    private final IUserRepositoryPort userRepositoryPort;
+    private final ILoggerPort logger;
+    private final TransactionalOperator transactionalOperator;
 
-        @Bean
-        public IUserUseCase userUseCase() {
-                IUserUseCase useCase = new UserUseCase(userRepositoryPort, logger);
-                return new TransactionalUserUseCase(useCase, transactionalOperator);
-        }
+    @Bean
+    public IUserUseCase userUseCase() {
+        IUserUseCase useCase = new UserUseCase(userRepositoryPort, logger);
+        return new TransactionalUserUseCase(useCase, transactionalOperator);
+    }
 }

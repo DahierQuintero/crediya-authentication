@@ -1,12 +1,10 @@
 package co.com.pragma.r2dbc;
 
 import co.com.pragma.model.user.entities.User;
-import co.com.pragma.model.user.exceptions.UserAlreadyExistsException;
 import co.com.pragma.model.user.ports.IUserRepositoryPort;
 import co.com.pragma.r2dbc.entities.UserEntity;
 import co.com.pragma.r2dbc.helper.ReactiveAdapterOperations;
 import org.reactivecommons.utils.ObjectMapper;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Mono;
 
@@ -23,17 +21,21 @@ public class IUserEntityRepositoryPortAdapter extends ReactiveAdapterOperations<
 
     @Override
     public Mono<User> saveUser(User user) {
-        return save(user)
-                .onErrorMap(DuplicateKeyException.class, e -> {
-                    if (e.getMessage() != null && e.getMessage().contains("user.email")) {
-                        return new UserAlreadyExistsException(user.getEmail(), true);
-                    }
-                    return e;
-                });
+        return save(user);
     }
 
     @Override
-    public Mono<Boolean> existsByIdUserAndEmail(String idUser, String email) {
-        return repository.existsByIdUserAndEmail(idUser, email);
+    public Mono<Boolean> existsByIdUser(String idUser) {
+        return repository.existsByIdUser(idUser);
+    }
+
+    @Override
+    public Mono<Boolean> existsByEmail(String email) {
+        return repository.existsByEmail(email);
+    }
+
+    @Override
+    public Mono<Boolean> existsByIdNumber(String idNumber) {
+        return repository.existsByIdNumber(idNumber);
     }
 }

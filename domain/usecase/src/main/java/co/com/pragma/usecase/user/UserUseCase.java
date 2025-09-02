@@ -4,9 +4,10 @@ import co.com.pragma.model.user.entities.User;
 import co.com.pragma.model.user.exceptions.UserAlreadyExistsException;
 import co.com.pragma.model.user.ports.ILoggerPort;
 import co.com.pragma.model.user.ports.IUserRepositoryPort;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class UserUseCase implements IUserUseCase{
+public class UserUseCase implements IUserUseCase {
 
     private final IUserRepositoryPort iUserRepositoryPort;
     private final ILoggerPort logger;
@@ -20,7 +21,6 @@ public class UserUseCase implements IUserUseCase{
     public Mono<User> save(User user) {
         return Mono.deferContextual(ctx -> {
             String traceId = ctx.getOrDefault("traceId", "unknown");
-
             logger.info(traceId, "Iniciando caso de uso de guardado de usuario. ID: {} | Email: {}",
                     user.getIdUser(), user.getEmail());
 
@@ -31,11 +31,59 @@ public class UserUseCase implements IUserUseCase{
         });
     }
 
+    @Override
+    public Flux<User> findAll() {
+        return Flux.deferContextual(ctx -> {
+            String traceId = ctx.getOrDefault("traceId", "unknown");
+            logger.info(traceId, "Iniciando consulta de todos los usuarios");
+
+            return iUserRepositoryPort.findAll()
+                    .doOnComplete(() ->
+                            logger.info(traceId, "Consulta de todos los usuarios completada exitosamente")
+                    )
+                    .doOnError(error ->
+                            logger.error(traceId, "Error al consultar todos los usuarios", error)
+                    );
+        });
+    }
+
     private Mono<Void> validateUserDoesNotExist(User user, String traceId) {
-        return iUserRepositoryPort.existsByIdUserAndEmail(user.getIdUser(), user.getEmail())
-                .filter(exists -> !exists)
-                .switchIfEmpty(Mono.error(new UserAlreadyExistsException(user.getEmail())))
+        return Mono.zip(
+                        validateUserDoesNotExistByIdUser(user.getIdUser(), traceId),
+                        validateUserDoesNotExistByEmail(user.getEmail(), traceId),
+                        validateUserDoesNotExistByIdNumber(user.getIdNumber(), traceId)
+                )
                 .then();
+    }
+
+    private Mono<Boolean> validateUserDoesNotExistByIdUser(String idUser, String traceId) {
+        return iUserRepositoryPort.existsByIdUser(idUser)
+                .flatMap(exists -> {
+                    if (Boolean.TRUE.equals(exists)) {
+                        return Mono.error(new UserAlreadyExistsException("User with idUser " + idUser + " already exists"));
+                    }
+                    return Mono.just(false);
+                });
+    }
+
+    private Mono<Boolean> validateUserDoesNotExistByEmail(String email, String traceId) {
+        return iUserRepositoryPort.existsByEmail(email)
+                .flatMap(exists -> {
+                    if (Boolean.TRUE.equals(exists)) {
+                        return Mono.error(new UserAlreadyExistsException("User with email " + email + " already exists"));
+                    }
+                    return Mono.just(false);
+                });
+    }
+
+    private Mono<Boolean> validateUserDoesNotExistByIdNumber(String idNumber, String traceId) {
+        return iUserRepositoryPort.existsByIdNumber(idNumber)
+                .flatMap(exists -> {
+                    if (Boolean.TRUE.equals(exists)) {
+                        return Mono.error(new UserAlreadyExistsException("User with idNumber " + idNumber + " already exists"));
+                    }
+                    return Mono.just(false);
+                });
     }
 
     private Mono<User> saveUserToRepository(User user, String traceId) {

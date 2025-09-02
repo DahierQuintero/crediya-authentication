@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -26,7 +27,6 @@ public class UserHandler {
     private final IUserUseCase userUseCase;
     private final ValidationUtil validator;
     private final ObjectMapper objectMapper;
-
 
     public Mono<ServerResponse> save(ServerRequest serverRequest) {
         String traceId = extractTraceId(serverRequest);
@@ -59,6 +59,27 @@ public class UserHandler {
                     log.error("[{}] Error creating user: {}", traceId, e.getMessage(), e);
                     return ServerResponse
                             .status(getHttpStatus(e))
+                            .bodyValue(createErrorResponse(e, traceId));
+                })
+                .contextWrite(Context.of("traceId", traceId));
+    }
+
+    public Mono<ServerResponse> getAllUsers(ServerRequest request) {
+        String traceId = extractTraceId(request);
+        log.info("[{}] Received get all users request", traceId);
+
+        return userUseCase.findAll()
+                .map(UserMapper::toUserDTO)
+                .collectList()
+                .flatMap(users -> ServerResponse
+                        .ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(users)
+                )
+                .onErrorResume(e -> {
+                    log.error("[{}] Error getting all users: {}", traceId, e.getMessage(), e);
+                    return ServerResponse
+                            .status(HttpStatus.INTERNAL_SERVER_ERROR)
                             .bodyValue(createErrorResponse(e, traceId));
                 })
                 .contextWrite(Context.of("traceId", traceId));
