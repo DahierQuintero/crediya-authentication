@@ -1,5 +1,8 @@
 package co.com.pragma.r2dbc.web.exception;
 
+import lombok.Getter;
+
+@Getter
 public enum ErrorCode {
 
     USER_ALREADY_EXISTS("USER_001", "User already exists"),
@@ -20,12 +23,5 @@ public enum ErrorCode {
     ErrorCode(String code, String description) {
         this.code = code;
         this.description = description;
-    }
-
-    public String getCode() {
-        return code;
-    }
-    public String getDescription() {
-        return description;
     }
 }
