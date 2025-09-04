@@ -1,4 +1,4 @@
-package co.com.pragma.r2dbc.web.exception;
+package co.com.pragma.api.web.exception;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.List;
 
 @Builder
 @Getter
@@ -16,8 +17,16 @@ import java.time.Instant;
 public class ErrorResponse {
     private String code;
     private String message;
-    private String field;
-    private Object value;
     private String traceId;
     private Instant timestamp;
+    private List<FieldError> errors;
+
+    @Builder
+    @Getter
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class FieldError {
+        private String field;
+        private String message;
+    }
 }

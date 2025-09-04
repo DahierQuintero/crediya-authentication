@@ -1,27 +1,29 @@
 package co.com.pragma.model.user.exceptions;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+import java.util.List;
+
+@Getter
 public class ValidationException extends DomainException {
 
-    private final String field;
-    private final Object value;
+    private final List<FieldViolation> violations;
 
-    public ValidationException(String field, Object value, String message) {
+    public ValidationException(String message, List<FieldViolation> violations) {
         super(message);
-        this.field = field;
-        this.value = value;
+        this.violations = violations;
     }
 
     public ValidationException(String message) {
         super(message);
-        this.field = null;
-        this.value = null;
+        this.violations = null;
     }
 
-    public String getField() {
-        return field;
-    }
-
-    public Object getValue() {
-        return value;
+    @Getter
+    @AllArgsConstructor
+    public static class FieldViolation {
+        private final String field;
+        private final String message;
     }
 }

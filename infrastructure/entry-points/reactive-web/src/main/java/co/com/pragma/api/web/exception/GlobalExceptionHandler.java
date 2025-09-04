@@ -1,11 +1,11 @@
-package co.com.pragma.r2dbc.web.exception;
+package co.com.pragma.api.web.exception;
 
+import co.com.pragma.api.exceptions.ExternalServiceException;
+import co.com.pragma.api.exceptions.RepositoryException;
 import co.com.pragma.model.user.exceptions.UserAlreadyExistsException;
 import co.com.pragma.model.user.exceptions.UserNotFoundException;
 import co.com.pragma.model.user.exceptions.ValidationException;
-import co.com.pragma.r2dbc.exceptions.ExternalServiceException;
-import co.com.pragma.r2dbc.exceptions.RepositoryException;
-import co.com.pragma.r2dbc.exceptions.ResponseSerializationException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.reactive.error.ErrorWebExceptionHandler;
@@ -13,12 +13,16 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.support.WebExchangeBindException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -33,32 +37,67 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
 
     @Override
     public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
-        String traceId = extractTraceId(exchange);
+        String traceId = exchange.getRequest().getHeaders().getFirst("X-Trace-ID");
+        if (traceId == null) {
+            traceId = "NO_TRACE_ID";
+        }
 
         ServerHttpResponse response = exchange.getResponse();
-        response.getHeaders().add("Content-Type", "application/json");
+        response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
-        ErrorResponse errorResponse = buildErrorResponse(ex, traceId);
-        HttpStatusCode status = determineHttpStatus(ex);
+        if (ex instanceof WebExchangeBindException webEx) {
+            return handleValidationException(webEx, response, traceId);
+        }
 
-        response.setStatusCode(status);
-
-        // Log del error
-        logError(ex, traceId, status);
-
-        return response.writeWith(Mono.fromSupplier(() -> {
-            DataBuffer buffer = response.bufferFactory().allocateBuffer(1024);
-            try {
-                byte[] bytes = objectMapper.writeValueAsBytes(errorResponse);
-                buffer.write(bytes);
-                return buffer;
-            } catch (Exception e) {
-                throw new ResponseSerializationException("Error serializing response", e);
-            }
-        }));
+        return handleOtherExceptions(ex, response, traceId);
     }
 
-    private ErrorResponse buildErrorResponse(Throwable ex, String traceId) {
+    private Mono<Void> handleValidationException(WebExchangeBindException ex,
+                                                 ServerHttpResponse response, String traceId) {
+
+        String errorMessage = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(fieldError -> String.format("'%s' %s",
+                        fieldError.getField(),
+                        fieldError.getDefaultMessage()))
+                .collect(Collectors.joining("; "));
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .code(ErrorCode.VALIDATION_ERROR.getCode())
+                .message(errorMessage)
+                .traceId(traceId)
+                .timestamp(Instant.now())
+                .build();
+
+        return writeResponse(response, HttpStatus.BAD_REQUEST, errorResponse);
+    }
+
+    private Mono<Void> handleOtherExceptions(Throwable ex,
+                                             ServerHttpResponse response, String traceId) {
+
+        ErrorResponse errorResponse = buildErrorResponse(ex, traceId);
+        HttpStatus status = determineHttpStatus(ex);
+
+        logError(ex, traceId, status);
+        return writeResponse(response, status, errorResponse);
+    }
+
+    private Mono<Void> writeResponse(ServerHttpResponse response,
+                                     HttpStatus status, ErrorResponse errorResponse) {
+
+        response.setStatusCode(status);
+        try {
+            byte[] bytes = objectMapper.writeValueAsBytes(errorResponse);
+            DataBuffer buffer = response.bufferFactory().wrap(bytes);
+            return response.writeWith(Mono.just(buffer));
+        } catch (JsonProcessingException e) {
+            log.error("Error writing error response", e);
+            return response.setComplete();
+        }
+    }
+
+    public static ErrorResponse buildErrorResponse(Throwable ex, String traceId) {
         if (ex instanceof UserAlreadyExistsException) {
             return ErrorResponse.builder()
                     .code(ErrorCode.USER_ALREADY_EXISTS.getCode())
@@ -78,11 +117,14 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
         }
 
         if (ex instanceof ValidationException validationEx) {
+            List<ErrorResponse.FieldError> fieldErrors = validationEx.getViolations().stream()
+                    .map(v -> new ErrorResponse.FieldError(v.getField(), v.getMessage()))
+                    .toList();
+
             return ErrorResponse.builder()
                     .code(ErrorCode.VALIDATION_ERROR.getCode())
                     .message(validationEx.getMessage())
-                    .field(validationEx.getField())
-                    .value(validationEx.getValue())
+                    .errors(fieldErrors)
                     .traceId(traceId)
                     .timestamp(Instant.now())
                     .build();
@@ -106,6 +148,15 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
                     .build();
         }
 
+        if (ex instanceof WebExchangeBindException) {
+            return ErrorResponse.builder()
+                    .code(ErrorCode.VALIDATION_ERROR.getCode())
+                    .message(ex.getMessage())
+                    .traceId(traceId)
+                    .timestamp(Instant.now())
+                    .build();
+        }
+
         return ErrorResponse.builder()
                 .code(ErrorCode.INTERNAL_SERVER_ERROR.getCode())
                 .message("An unexpected error occurred")
@@ -114,7 +165,7 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
                 .build();
     }
 
-    private HttpStatusCode determineHttpStatus(Throwable ex) {
+    private HttpStatus determineHttpStatus(Throwable ex) {
         if (ex instanceof UserAlreadyExistsException) {
             return HttpStatus.CONFLICT;
         }
@@ -129,6 +180,9 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
         }
         if (ex instanceof ExternalServiceException) {
             return HttpStatus.SERVICE_UNAVAILABLE;
+        }
+        if (ex instanceof WebExchangeBindException) {
+            return HttpStatus.BAD_REQUEST;
         }
 
         return HttpStatus.INTERNAL_SERVER_ERROR;

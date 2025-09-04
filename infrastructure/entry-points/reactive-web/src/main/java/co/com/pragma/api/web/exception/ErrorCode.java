@@ -1,4 +1,4 @@
-package co.com.pragma.r2dbc.web.exception;
+package co.com.pragma.api.web.exception;
 
 import lombok.Getter;
 

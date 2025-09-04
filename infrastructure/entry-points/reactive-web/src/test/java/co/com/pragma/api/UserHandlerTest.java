@@ -1,11 +1,14 @@
 package co.com.pragma.api;
 
 import co.com.pragma.api.dto.UserDTO;
+import co.com.pragma.api.exceptions.ExternalServiceException;
+import co.com.pragma.api.exceptions.RepositoryException;
 import co.com.pragma.api.helper.ValidationUtil;
-import co.com.pragma.api.mapper.UserMapper;
 import co.com.pragma.model.user.entities.User;
+import co.com.pragma.model.user.exceptions.UserAlreadyExistsException;
+import co.com.pragma.model.user.exceptions.UserNotFoundException;
+import co.com.pragma.model.user.exceptions.ValidationException;
 import co.com.pragma.usecase.user.IUserUseCase;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,12 +17,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
-import org.springframework.mock.web.server.MockServerWebExchange;
-import org.springframework.test.web.reactive.server.WebTestClient;
-import org.springframework.web.reactive.function.server.HandlerStrategies;
+import org.springframework.mock.web.reactive.function.server.MockServerRequest;
 import org.springframework.web.reactive.function.server.ServerRequest;
+import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -28,9 +28,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,7 +43,7 @@ class UserHandlerTest {
     private IUserUseCase userUseCase;
 
     @Mock
-    private ValidationUtil validationUtil;
+    private ValidationUtil validator;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -48,147 +51,428 @@ class UserHandlerTest {
     @InjectMocks
     private UserHandler userHandler;
 
-    private User testUser;
     private UserDTO testUserDTO;
-    private String testJson;
-    private WebTestClient webTestClient;
+    private User testUser;
+    private String traceId;
+    private String validJsonBody;
 
     @BeforeEach
-    void setUp() throws JsonProcessingException {
-        testUser = new User()
-                .setIdUser(123L)
-                .setName("John")
-                .setLastName("Doe")
-                .setEmail("john.doe@example.com")
-                .setIdNumber("12345678")
-                .setBirthDate(LocalDate.of(1990, 1, 1))
-                .setAddress("123 Main St")
-                .setPhone("1234567890")
-                .setRoleId((byte) 1)
-                .setBaseSalary(new BigDecimal("1000000.00"));
+    void setUp() {
+        traceId = "test-trace-123";
 
         testUserDTO = new UserDTO(
-                "12345678",
+                "1234",
                 "John",
                 "Doe",
-                "john.doe@example.com",
+                "john@test.com",
                 LocalDate.of(1990, 1, 1),
-                "Calle 11",
-                "123 Main St",
+                "calle 12",
+                "1234567890",
                 (byte) 1,
-                new BigDecimal("1000000.00")
+                BigDecimal.valueOf(5000)
         );
 
-        testJson = "{\"idUser\":\"123L\",\"name\":\"John\",\"lastName\":\"Doe\",\"email\":\"john.doe@example.com\"}";
+        testUser = new User()
+                .setIdUser(1234L)
+                .setName("John")
+                .setLastName("Doe")
+                .setEmail("john@test.com")
+                .setBirthDate(LocalDate.of(1990, 1, 1))
+                .setAddress("calle 12")
+                .setPhone("1234567890")
+                .setRoleId((byte) 1)
+                .setBaseSalary(BigDecimal.valueOf(5000));
 
-        webTestClient = WebTestClient.bindToRouterFunction(
-                new RouterRest().routerFunction(userHandler)
-        ).build();
+        validJsonBody = """
+                {
+                    "name": "John Doe",
+                    "idNumber": "12345678",
+                    "email": "john@test.com",
+                    "birthDate": "1990-01-01",
+                    "phoneNumber": "1234567890"
+                }
+                """;
     }
 
     @Test
-    void save_ValidRequest_ShouldReturnCreated() throws JsonProcessingException {
-        // Arrange
-        ServerRequest request = createServerRequestWithBody(testJson);
-        when(objectMapper.readValue(testJson, UserDTO.class)).thenReturn(testUserDTO);
-        when(validationUtil.validate(any(UserDTO.class))).thenReturn(Mono.just(testUserDTO));
+    void save_WithValidRequest_ShouldCreateUserSuccessfully() throws Exception {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .body(Mono.just(validJsonBody));
+
+        when(objectMapper.readValue(validJsonBody, UserDTO.class)).thenReturn(testUserDTO);
+        when(validator.validate(testUserDTO)).thenReturn(Mono.just(testUserDTO));
         when(userUseCase.save(any(User.class))).thenReturn(Mono.just(testUser));
 
-        // Act
-        var responseMono = userHandler.save(request);
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
 
-        // Assert
-        StepVerifier.create(responseMono)
-                .expectNextMatches(serverResponse -> {
-                    assert serverResponse.statusCode() == HttpStatus.CREATED;
-                    return true;
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.statusCode());
                 })
                 .verifyComplete();
 
+        verify(objectMapper).readValue(validJsonBody, UserDTO.class);
+        verify(validator).validate(testUserDTO);
         verify(userUseCase).save(any(User.class));
     }
 
     @Test
-    void save_InvalidJson_ShouldReturnBadRequest() throws JsonProcessingException {
-        // Arrange
-        String invalidJson = "{invalid-json}";
-        ServerRequest request = createServerRequestWithBody(invalidJson);
-        when(objectMapper.readValue(invalidJson, UserDTO.class))
-                .thenThrow(new JsonProcessingException("Invalid JSON") {});
+    void save_WithoutTraceId_ShouldUseDefaultTraceId() throws Exception {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .body(Mono.just(validJsonBody));
 
-        // Act
-        var responseMono = userHandler.save(request);
+        when(objectMapper.readValue(validJsonBody, UserDTO.class)).thenReturn(testUserDTO);
+        when(validator.validate(testUserDTO)).thenReturn(Mono.just(testUserDTO));
+        when(userUseCase.save(any(User.class))).thenReturn(Mono.just(testUser));
 
-        // Assert
-        StepVerifier.create(responseMono)
-                .expectNextMatches(serverResponse -> 
-                    serverResponse.statusCode() == HttpStatus.BAD_REQUEST)
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.statusCode());
+                })
                 .verifyComplete();
     }
 
-    private ServerRequest createServerRequestWithBody(String body) {
-        return ServerRequest.create(
-                MockServerWebExchange.from(
-                        MockServerHttpRequest.post("/api/users")
-                                .header("X-Trace-Id", "test-trace-id")
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .body(body)
-                ),
-                HandlerStrategies.withDefaults().messageReaders()
-        );
+    @Test
+    void save_WithInvalidJson_ShouldReturnBadRequest() throws Exception {
+        // Given
+        String invalidJson = "{ invalid json }";
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .body(Mono.just(invalidJson));
+
+        when(objectMapper.readValue(invalidJson, UserDTO.class))
+                .thenThrow(new com.fasterxml.jackson.core.JsonProcessingException("Invalid JSON") {});
+
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.BAD_REQUEST, response.statusCode());
+                })
+                .verifyComplete();
+
+        verify(objectMapper).readValue(invalidJson, UserDTO.class);
+        verifyNoInteractions(validator);
+        verifyNoInteractions(userUseCase);
     }
 
     @Test
-    void getAllUsers_success() {
-        // Arrange
-        User user = new User(
-                        "12345678",
-                        "John",
-                        "Doe",
-                        "john.doe@example.com",
-                        LocalDate.of(1990, 1, 1),
-                        "Calle 11",
-                        "123 Main St",
-                        (byte) 1,
-                        new BigDecimal("1000000.00")
-                );
+    void save_WithValidationError_ShouldReturnBadRequest() throws Exception {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .body(Mono.just(validJsonBody));
 
-        when(userUseCase.findAll()).thenReturn(Flux.just(user));
+        when(objectMapper.readValue(validJsonBody, UserDTO.class)).thenReturn(testUserDTO);
+        when(validator.validate(testUserDTO))
+                .thenReturn(Mono.error(new ValidationException("Name is required")));
 
-        UserDTO expectedDto = UserMapper.toUserDTO(user);
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
 
-        // Act & Assert
-        webTestClient.get()
-                .uri("/api/v1/users")
-                .accept(MediaType.APPLICATION_JSON)
-                .header("traceId", "test-trace") // simula header para el log
-                .exchange()
-                .expectStatus().isOk()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                .expectBodyList(UserDTO.class)
-                .isEqualTo(List.of(expectedDto));
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.BAD_REQUEST, response.statusCode());
+                })
+                .verifyComplete();
 
-        verify(userUseCase, times(1)).findAll();
+        verify(objectMapper).readValue(validJsonBody, UserDTO.class);
+        verify(validator).validate(testUserDTO);
+        verifyNoInteractions(userUseCase);
     }
 
     @Test
-    void getAllUsers_error() {
-        // Arrange
-        when(userUseCase.findAll()).thenReturn(Flux.error(new RuntimeException("DB error")));
+    void save_WithUserAlreadyExistsException_ShouldReturnConflict() throws Exception {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .body(Mono.just(validJsonBody));
 
-        // Act & Assert
-        webTestClient.get()
-                .uri("/api/v1/users")
-                .accept(MediaType.APPLICATION_JSON)
-                .header("X-Trace-ID", "test-trace")
-                .exchange()
-                .expectStatus().is5xxServerError()
-                .expectBody()
-                .jsonPath("$.code").isEqualTo("ERROR")
-                .jsonPath("$.message").isEqualTo("DB error")
-                .jsonPath("$.traceId").isEqualTo("test-trace")
-                .jsonPath("$.timestamp").exists();
+        when(objectMapper.readValue(validJsonBody, UserDTO.class)).thenReturn(testUserDTO);
+        when(validator.validate(testUserDTO)).thenReturn(Mono.just(testUserDTO));
+        when(userUseCase.save(any(User.class)))
+                .thenReturn(Mono.error(new UserAlreadyExistsException("User already exists")));
 
-        verify(userUseCase, times(1)).findAll();
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CONFLICT, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void save_WithRepositoryException_ShouldReturnInternalServerError() throws Exception {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .body(Mono.just(validJsonBody));
+
+        when(objectMapper.readValue(validJsonBody, UserDTO.class)).thenReturn(testUserDTO);
+        when(validator.validate(testUserDTO)).thenReturn(Mono.just(testUserDTO));
+        when(userUseCase.save(any(User.class)))
+                .thenReturn(Mono.error(new RepositoryException("Database error")));
+
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void save_WithExternalServiceException_ShouldReturnServiceUnavailable() throws Exception {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .body(Mono.just(validJsonBody));
+
+        when(objectMapper.readValue(validJsonBody, UserDTO.class)).thenReturn(testUserDTO);
+        when(validator.validate(testUserDTO)).thenReturn(Mono.just(testUserDTO));
+        when(userUseCase.save(any(User.class)))
+                .thenReturn(Mono.error(new ExternalServiceException("External service down")));
+
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void save_WithGenericException_ShouldReturnInternalServerError() throws Exception {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .body(Mono.just(validJsonBody));
+
+        when(objectMapper.readValue(validJsonBody, UserDTO.class)).thenReturn(testUserDTO);
+        when(validator.validate(testUserDTO)).thenReturn(Mono.just(testUserDTO));
+        when(userUseCase.save(any(User.class)))
+                .thenReturn(Mono.error(new RuntimeException("Unexpected error")));
+
+        // When
+        Mono<ServerResponse> result = userHandler.save(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void getAllUsers_WithValidRequest_ShouldReturnUsersList() {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .build();
+
+        List<User> users = List.of(testUser);
+        when(userUseCase.findAll()).thenReturn(Flux.fromIterable(users));
+
+        // When
+        Mono<ServerResponse> result = userHandler.getAllUsers(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.statusCode());
+                    assertNotNull(response.headers().getFirst("Content-Type"));
+                    assertTrue(response.headers().getFirst("Content-Type").contains("application/json"));
+                })
+                .verifyComplete();
+
+        verify(userUseCase).findAll();
+    }
+
+    @Test
+    void getAllUsers_WithEmptyList_ShouldReturnEmptyList() {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .build();
+
+        when(userUseCase.findAll()).thenReturn(Flux.empty());
+
+        // When
+        Mono<ServerResponse> result = userHandler.getAllUsers(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.statusCode());
+                })
+                .verifyComplete();
+
+        verify(userUseCase).findAll();
+    }
+
+    @Test
+    void getAllUsers_WithoutTraceId_ShouldUseDefaultTraceId() {
+        // Given
+        ServerRequest request = MockServerRequest.builder().build();
+
+        List<User> users = List.of(testUser);
+        when(userUseCase.findAll()).thenReturn(Flux.fromIterable(users));
+
+        // When
+        Mono<ServerResponse> result = userHandler.getAllUsers(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void getAllUsers_WithRepositoryException_ShouldReturnInternalServerError() {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .build();
+
+        when(userUseCase.findAll())
+                .thenReturn(Flux.error(new RepositoryException("Database connection error")));
+
+        // When
+        Mono<ServerResponse> result = userHandler.getAllUsers(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void getAllUsers_WithExternalServiceException_ShouldReturnServiceUnavailable() {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .build();
+
+        when(userUseCase.findAll())
+                .thenReturn(Flux.error(new ExternalServiceException("External service error")));
+
+        // When
+        Mono<ServerResponse> result = userHandler.getAllUsers(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void getAllUsers_WithUserNotFoundException_ShouldReturnNotFound() {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .build();
+
+        when(userUseCase.findAll())
+                .thenReturn(Flux.error(new UserNotFoundException("No users found")));
+
+        // When
+        Mono<ServerResponse> result = userHandler.getAllUsers(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.NOT_FOUND, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void getAllUsers_WithGenericException_ShouldReturnInternalServerError() {
+        // Given
+        ServerRequest request = MockServerRequest.builder()
+                .header("X-Trace-ID", traceId)
+                .build();
+
+        when(userUseCase.findAll())
+                .thenReturn(Flux.error(new RuntimeException("Unexpected error")));
+
+        // When
+        Mono<ServerResponse> result = userHandler.getAllUsers(request);
+
+        // Then
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.statusCode());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void determineHttpStatus_WithDifferentExceptions_ShouldReturnCorrectStatus() {
+        // Test IllegalArgumentException
+        assertEquals(HttpStatus.BAD_REQUEST,
+                UserHandler.determineHttpStatus(new IllegalArgumentException("Invalid argument")));
+
+        // Test ValidationException
+        assertEquals(HttpStatus.BAD_REQUEST,
+                UserHandler.determineHttpStatus(new ValidationException("Validation failed")));
+
+        // Test UserAlreadyExistsException
+        assertEquals(HttpStatus.CONFLICT,
+                UserHandler.determineHttpStatus(new UserAlreadyExistsException("User exists")));
+
+        // Test UserNotFoundException
+        assertEquals(HttpStatus.NOT_FOUND,
+                UserHandler.determineHttpStatus(new UserNotFoundException("User not found")));
+
+        // Test RepositoryException
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR,
+                UserHandler.determineHttpStatus(new RepositoryException("Repository error")));
+
+        // Test ExternalServiceException
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                UserHandler.determineHttpStatus(new ExternalServiceException("Service down")));
+
+        // Test Generic Exception
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR,
+                UserHandler.determineHttpStatus(new RuntimeException("Unknown error")));
+    }
+}
+
+class UserHandlerTestSupport extends UserHandler {
+    public UserHandlerTestSupport() {
+        super(null, null, null);
+    }
+
+    public static HttpStatus determineHttpStatus(Throwable ex) {
+        return UserHandler.determineHttpStatus(ex);
     }
 }

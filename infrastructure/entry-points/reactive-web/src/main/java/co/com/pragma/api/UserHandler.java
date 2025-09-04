@@ -1,8 +1,15 @@
 package co.com.pragma.api;
 
 import co.com.pragma.api.dto.UserDTO;
+import co.com.pragma.api.exceptions.ExternalServiceException;
+import co.com.pragma.api.exceptions.RepositoryException;
 import co.com.pragma.api.helper.ValidationUtil;
 import co.com.pragma.api.mapper.UserMapper;
+import co.com.pragma.api.web.exception.ErrorResponse;
+import co.com.pragma.api.web.exception.GlobalExceptionHandler;
+import co.com.pragma.model.user.exceptions.UserAlreadyExistsException;
+import co.com.pragma.model.user.exceptions.UserNotFoundException;
+import co.com.pragma.model.user.exceptions.ValidationException;
 import co.com.pragma.usecase.user.IUserUseCase;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,8 +23,6 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 import reactor.util.context.Context;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 
 @Slf4j
@@ -34,34 +39,33 @@ public class UserHandler {
 
         return serverRequest.bodyToMono(String.class)
                 .doOnNext(body -> log.debug("[{}] Request body: {}", traceId, body))
-                .flatMap(body -> {
-                    try {
-                        UserDTO userDTO = objectMapper.readValue(body, UserDTO.class);
-                        log.debug("[{}] Parsed UserDTO: {}", traceId, userDTO);
-                        return Mono.just(userDTO);
-                    } catch (JsonProcessingException e) {
-                        log.error("[{}] Error parsing request body: {}", traceId, e.getMessage(), e);
-                        return Mono.error(new IllegalArgumentException("Invalid request body: " + e.getMessage()));
-                    }
-                })
+                .flatMap(body -> parseUserDto(body, traceId))
                 .flatMap(validator::validate)
                 .map(UserMapper::toUser)
                 .doOnNext(user -> log.debug("[{}] Mapped to User: {}", traceId, user))
                 .flatMap(userUseCase::save)
                 .map(UserMapper::toUserDTO)
-                .flatMap(savedUser -> {
-                    log.info("[{}] User created successfully: {}", traceId, savedUser.idNumber());
-                    return ServerResponse
-                            .status(HttpStatus.CREATED)
-                            .bodyValue(savedUser);
-                })
-                .onErrorResume(e -> {
-                    log.error("[{}] Error creating user: {}", traceId, e.getMessage(), e);
-                    return ServerResponse
-                            .status(getHttpStatus(e))
-                            .bodyValue(createErrorResponse(e, traceId));
-                })
+                .flatMap(savedUser -> buildSuccessResponse(savedUser, traceId))
+                .onErrorResume(e -> handleError(e, traceId))
                 .contextWrite(Context.of("traceId", traceId));
+    }
+
+    private Mono<UserDTO> parseUserDto(String body, String traceId) {
+        try {
+            UserDTO userDTO = objectMapper.readValue(body, UserDTO.class);
+            log.debug("[{}] Parsed UserDTO: {}", traceId, userDTO);
+            return Mono.just(userDTO);
+        } catch (JsonProcessingException e) {
+            log.error("[{}] Error parsing request body: {}", traceId, e.getMessage(), e);
+            return Mono.error(new IllegalArgumentException("Invalid request body: " + e.getMessage()));
+        }
+    }
+
+    private Mono<ServerResponse> buildSuccessResponse(UserDTO savedUser, String traceId) {
+        log.info("[{}] User created successfully: {}", traceId, savedUser.idNumber());
+        return ServerResponse
+                .status(HttpStatus.CREATED)
+                .bodyValue(savedUser);
     }
 
     public Mono<ServerResponse> getAllUsers(ServerRequest request) {
@@ -76,12 +80,7 @@ public class UserHandler {
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(users)
                 )
-                .onErrorResume(e -> {
-                    log.error("[{}] Error getting all users: {}", traceId, e.getMessage(), e);
-                    return ServerResponse
-                            .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                            .bodyValue(createErrorResponse(e, traceId));
-                })
+                .onErrorResume(e -> handleError(e, traceId))
                 .contextWrite(Context.of("traceId", traceId));
     }
 
@@ -92,19 +91,26 @@ public class UserHandler {
         );
     }
 
-    private HttpStatus getHttpStatus(Throwable e) {
-        if (e instanceof IllegalArgumentException) {
-            return HttpStatus.BAD_REQUEST;
-        }
-        return HttpStatus.INTERNAL_SERVER_ERROR;
+    private static Mono<ServerResponse> handleError(Throwable e, String traceId) {
+        log.error("[{}] Error processing request: {}", traceId, e.getMessage(), e);
+        ErrorResponse errorResponse = GlobalExceptionHandler.buildErrorResponse(e, traceId);
+        HttpStatus status = determineHttpStatus(e);
+        return ServerResponse.status(status).bodyValue(errorResponse);
     }
 
-    private Map<String, Object> createErrorResponse(Throwable e, String traceId) {
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("code", "ERROR");
-        errorResponse.put("message", e.getMessage());
-        errorResponse.put("traceId", traceId);
-        errorResponse.put("timestamp", java.time.Instant.now().toString());
-        return errorResponse;
+    public static HttpStatus determineHttpStatus(Throwable ex) {
+        if (ex instanceof IllegalArgumentException || ex instanceof ValidationException) {
+            return HttpStatus.BAD_REQUEST;
+        } else if (ex instanceof UserAlreadyExistsException) {
+            return HttpStatus.CONFLICT;
+        } else if (ex instanceof UserNotFoundException) {
+            return HttpStatus.NOT_FOUND;
+        } else if (ex instanceof RepositoryException) {
+            return HttpStatus.INTERNAL_SERVER_ERROR;
+        } else if (ex instanceof ExternalServiceException) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
+        } else {
+            return HttpStatus.INTERNAL_SERVER_ERROR;
+        }
     }
 }

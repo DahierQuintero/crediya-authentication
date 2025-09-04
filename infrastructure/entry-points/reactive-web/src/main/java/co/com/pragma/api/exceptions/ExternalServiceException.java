@@ -1,4 +1,4 @@
-package co.com.pragma.r2dbc.exceptions;
+package co.com.pragma.api.exceptions;
 
 public class ExternalServiceException extends RuntimeException {
     public ExternalServiceException(String message) {

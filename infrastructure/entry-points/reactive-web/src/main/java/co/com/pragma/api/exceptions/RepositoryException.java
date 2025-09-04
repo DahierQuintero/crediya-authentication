@@ -1,4 +1,4 @@
-package co.com.pragma.r2dbc.exceptions;
+package co.com.pragma.api.exceptions;
 
 public class RepositoryException extends RuntimeException {
     public RepositoryException(String message) {
