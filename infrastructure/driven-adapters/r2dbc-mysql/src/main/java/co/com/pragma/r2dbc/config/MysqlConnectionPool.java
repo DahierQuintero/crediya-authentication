@@ -13,7 +13,6 @@ import java.time.Duration;
 
 @Configuration
 public class MysqlConnectionPool {
-    /* Change these values for your project */
     public static final int INITIAL_SIZE = 12;
     public static final int MAX_SIZE = 15;
     public static final int MAX_IDLE_TIME = 30;

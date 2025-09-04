@@ -15,21 +15,23 @@ import java.time.LocalDate;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-@Table("user")
+@Table(name = "user")
 public class UserEntity {
     @Id
     @Column("id_user")
-    private String idUser;
+    private Long idUser;
     private String name;
     @Column("last_name")
     private String lastName;
     private String email;
     @Column("id_number")
     private String idNumber;
-    @Column("date_of_birth")
-    private LocalDate dateOfBirth;
+    @Column("birth_date")
+    private LocalDate birthDate;
     private String address;
     private String phone;
+    @Column("role_id")
+    private Byte roleId;
     @Column("base_salary")
     private BigDecimal baseSalary;
 }
