@@ -18,8 +18,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,7 +42,7 @@ class UserUseCaseTest {
     @BeforeEach
     void setUp() {
         testUser = new User();
-        testUser.setIdUser("123");
+        testUser.setIdUser(123L);
         testUser.setName("Test");
         testUser.setLastName("User");
         testUser.setEmail("test@example.com");
@@ -55,7 +57,7 @@ class UserUseCaseTest {
     @Test
     void saveUser_Success() {
         // Arrange
-        when(userRepositoryPort.existsByIdUser(anyString())).thenReturn(Mono.just(false));
+        when(userRepositoryPort.existsByIdUser(anyLong())).thenReturn(Mono.just(false));
         when(userRepositoryPort.existsByEmail(anyString())).thenReturn(Mono.just(false));
         when(userRepositoryPort.existsByIdNumber(anyString())).thenReturn(Mono.just(false));
         when(userRepositoryPort.saveUser(any(User.class))).thenReturn(Mono.just(testUser));
@@ -73,15 +75,12 @@ class UserUseCaseTest {
 
     @Test
     void saveUser_WhenUserWithIdExists_ShouldThrowException() {
-        // Arrange
         when(userRepositoryPort.existsByIdUser(testUser.getIdUser())).thenReturn(Mono.just(true));
 
-        // Act & Assert
         StepVerifier.create(userUseCase.save(testUser))
                 .expectErrorMatches(throwable ->
                         throwable instanceof UserAlreadyExistsException &&
-                                throwable.getMessage().contains("User with idUser " + testUser.getIdUser() + " already exists")
-                )
+                                throwable.getMessage().contains("idUser " + testUser.getIdUser()))
                 .verify();
 
         verify(userRepositoryPort, never()).saveUser(any());
@@ -89,16 +88,13 @@ class UserUseCaseTest {
 
     @Test
     void saveUser_WhenUserWithEmailExists_ShouldThrowException() {
-        // Arrange
-        when(userRepositoryPort.existsByIdUser(testUser.getIdUser())).thenReturn(Mono.just(false));
+        when(userRepositoryPort.existsByIdUser(anyLong())).thenReturn(Mono.just(false));
         when(userRepositoryPort.existsByEmail(testUser.getEmail())).thenReturn(Mono.just(true));
 
-        // Act & Assert
         StepVerifier.create(userUseCase.save(testUser))
                 .expectErrorMatches(throwable ->
                         throwable instanceof UserAlreadyExistsException &&
-                                throwable.getMessage().contains("User with email " + testUser.getEmail() + " already exists")
-                )
+                                throwable.getMessage().contains("email " + testUser.getEmail()))
                 .verify();
 
         verify(userRepositoryPort, never()).saveUser(any());
@@ -106,17 +102,14 @@ class UserUseCaseTest {
 
     @Test
     void saveUser_WhenUserWithIdNumberExists_ShouldThrowException() {
-        // Arrange
-        when(userRepositoryPort.existsByIdUser(testUser.getIdUser())).thenReturn(Mono.just(false));
-        when(userRepositoryPort.existsByEmail(testUser.getEmail())).thenReturn(Mono.just(false));
+        when(userRepositoryPort.existsByIdUser(anyLong())).thenReturn(Mono.just(false));
+        when(userRepositoryPort.existsByEmail(anyString())).thenReturn(Mono.just(false));
         when(userRepositoryPort.existsByIdNumber(testUser.getIdNumber())).thenReturn(Mono.just(true));
 
-        // Act & Assert
         StepVerifier.create(userUseCase.save(testUser))
                 .expectErrorMatches(throwable ->
                         throwable instanceof UserAlreadyExistsException &&
-                                throwable.getMessage().contains("User with idNumber " + testUser.getIdNumber() + " already exists")
-                )
+                                throwable.getMessage().contains("idNumber " + testUser.getIdNumber()))
                 .verify();
 
         verify(userRepositoryPort, never()).saveUser(any());
@@ -124,17 +117,15 @@ class UserUseCaseTest {
 
     @Test
     void findAll_ShouldReturnAllUsers() {
-        // Arrange
-        User user1 = new User(/* ... */);
-        User user2 = new User(/* ... */);
+        User user1 = new User("s", "s", "s", "s", LocalDate.now(), "s", "s", (byte) 1, new BigDecimal(1000));
+        User user2 = new User("n", "n", "n", "n", LocalDate.now(), "n", "n", (byte) 1, new BigDecimal(1000));
         when(userRepositoryPort.findAll()).thenReturn(Flux.just(user1, user2));
 
-        // Act & Assert
         StepVerifier.create(userUseCase.findAll())
                 .expectNext(user1)
                 .expectNext(user2)
                 .verifyComplete();
 
-        verify(logger).info(anyString(), anyString());
+        verify(logger, times(2)).info(anyString(), anyString());
     }
 }

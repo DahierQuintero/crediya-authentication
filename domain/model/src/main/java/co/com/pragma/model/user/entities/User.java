@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public class User {
-    private String idUser;
+    private Long idUser;
     private String name;
     private String lastName;
     private String email;
@@ -18,7 +18,7 @@ public class User {
     public User() {
     }
 
-    public User(String idUser, String name, String lastName, String email, String idNumber, LocalDate birthDate, String address, String phone, Byte roleId, BigDecimal baseSalary) {
+    public User(Long idUser, String name, String lastName, String email, String idNumber, LocalDate birthDate, String address, String phone, Byte roleId, BigDecimal baseSalary) {
         this.idUser = idUser;
         this.name = name;
         this.lastName = lastName;
@@ -43,7 +43,7 @@ public class User {
         this.baseSalary = baseSalary;
     }
 
-    public String getIdUser() {
+    public Long getIdUser() {
         return idUser;
     }
 
@@ -83,7 +83,7 @@ public class User {
         return baseSalary;
     }
 
-    public User setIdUser(String idUser) {
+    public User setIdUser(Long idUser) {
         this.idUser = idUser;
         return this;
     }

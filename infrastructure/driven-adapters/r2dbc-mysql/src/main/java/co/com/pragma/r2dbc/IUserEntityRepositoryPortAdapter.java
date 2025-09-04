@@ -25,7 +25,7 @@ public class IUserEntityRepositoryPortAdapter extends ReactiveAdapterOperations<
     }
 
     @Override
-    public Mono<Boolean> existsByIdUser(String idUser) {
+    public Mono<Boolean> existsByIdUser(Long idUser) {
         return repository.existsByIdUser(idUser);
     }
 

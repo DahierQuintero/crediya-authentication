@@ -17,8 +17,8 @@ subprojects {
     compileJava.dependsOn validateStructure
 
     java {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     //build.dependsOn 'pitest'
@@ -32,15 +32,39 @@ subprojects {
         implementation 'io.projectreactor.addons:reactor-extra'
 
         testImplementation 'io.projectreactor.tools:blockhound-junit-platform:1.0.13.RELEASE'
-
         testImplementation 'io.projectreactor:reactor-test'
-        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-        testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+        // --- Unificamos JUnit 5 ---
+        testImplementation platform("org.junit:junit-bom:5.10.2")
+        testImplementation "org.junit.jupiter:junit-jupiter-api"
+        testImplementation "org.junit.jupiter:junit-jupiter-params"
+        testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine"
+
+        // --- Spring Boot test ---
+        testImplementation('org.springframework.boot:spring-boot-starter-test') {
+            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        }
+
         compileOnly "org.projectlombok:lombok:${lombokVersion}"
         annotationProcessor  "org.projectlombok:lombok:${lombokVersion}"
         testCompileOnly  "org.projectlombok:lombok:${lombokVersion}"
         testAnnotationProcessor  "org.projectlombok:lombok:${lombokVersion}"
+
         implementation platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+    }
+
+// 🔧 Forzar versiones si algún módulo baja algo viejo
+    configurations.all {
+        resolutionStrategy {
+            force "org.junit.jupiter:junit-jupiter-api:5.10.2"
+            force "org.junit.jupiter:junit-jupiter-engine:5.10.2"
+            force "org.junit.platform:junit-platform-commons:1.10.2"
+        }
+    }
+
+// Habilitar JUnit 5
+    tasks.test {
+        useJUnitPlatform()
     }
 
     tasks.withType(Test).configureEach {

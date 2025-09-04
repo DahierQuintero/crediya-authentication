@@ -15,7 +15,7 @@ public class ValidationUtil {
     public <T> Mono<T> validate(T body) {
         var violations = validator.validate(body);
         if (!violations.isEmpty()) return Mono.error(new ConstraintViolationException(violations));
-        return Mono.just(body);
+        return Mono.justOrEmpty(body);
     }
 
 }

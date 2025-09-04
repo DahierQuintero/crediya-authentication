@@ -7,7 +7,7 @@ import reactor.core.publisher.Mono;
 public interface IUserRepositoryPort {
     Mono<User> saveUser(User user);
 
-    Mono<Boolean> existsByIdUser(String idUser);
+    Mono<Boolean> existsByIdUser(Long idUser);
 
     Mono<Boolean> existsByEmail(String email);
 

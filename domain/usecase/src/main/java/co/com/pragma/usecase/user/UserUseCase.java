@@ -25,9 +25,11 @@ public class UserUseCase implements IUserUseCase {
                     user.getIdUser(), user.getEmail());
 
             return validateUserDoesNotExist(user, traceId)
-                    .then(saveUserToRepository(user, traceId))
-                    .doOnSuccess(savedUser -> logger.info(traceId, "Caso de uso de guardado de usuario finalizado exitosamente"))
-                    .doOnError(error -> logger.error(traceId, "Caso de uso de guardado de usuario fallido", error));
+                    .flatMap(validUser -> saveUserToRepository(validUser, traceId))
+                    .doOnSuccess(savedUser ->
+                            logger.info(traceId, "Caso de uso de guardado de usuario finalizado exitosamente"))
+                    .doOnError(error ->
+                            logger.error(traceId, "Caso de uso de guardado de usuario fallido", error));
         });
     }
 
@@ -47,42 +49,28 @@ public class UserUseCase implements IUserUseCase {
         });
     }
 
-    private Mono<Void> validateUserDoesNotExist(User user, String traceId) {
-        return Mono.zip(
-                        validateUserDoesNotExistByIdUser(user.getIdUser(), traceId),
-                        validateUserDoesNotExistByEmail(user.getEmail(), traceId),
-                        validateUserDoesNotExistByIdNumber(user.getIdNumber(), traceId)
-                )
-                .then();
-    }
-
-    private Mono<Boolean> validateUserDoesNotExistByIdUser(String idUser, String traceId) {
-        return iUserRepositoryPort.existsByIdUser(idUser)
-                .flatMap(exists -> {
-                    if (Boolean.TRUE.equals(exists)) {
-                        return Mono.error(new UserAlreadyExistsException("User with idUser " + idUser + " already exists"));
+    private Mono<User> validateUserDoesNotExist(User user, String traceId) {
+        return iUserRepositoryPort.existsByIdUser(user.getIdUser())
+                .flatMap(existsId -> {
+                    if (Boolean.TRUE.equals(existsId)) {
+                        return Mono.error(new UserAlreadyExistsException(
+                                "User with idUser " + user.getIdUser() + " already exists"));
                     }
-                    return Mono.just(false);
-                });
-    }
-
-    private Mono<Boolean> validateUserDoesNotExistByEmail(String email, String traceId) {
-        return iUserRepositoryPort.existsByEmail(email)
-                .flatMap(exists -> {
-                    if (Boolean.TRUE.equals(exists)) {
-                        return Mono.error(new UserAlreadyExistsException("User with email " + email + " already exists"));
+                    return iUserRepositoryPort.existsByEmail(user.getEmail());
+                })
+                .flatMap(existsEmail -> {
+                    if (Boolean.TRUE.equals(existsEmail)) {
+                        return Mono.error(new UserAlreadyExistsException(
+                                "User with email " + user.getEmail() + " already exists"));
                     }
-                    return Mono.just(false);
-                });
-    }
-
-    private Mono<Boolean> validateUserDoesNotExistByIdNumber(String idNumber, String traceId) {
-        return iUserRepositoryPort.existsByIdNumber(idNumber)
-                .flatMap(exists -> {
-                    if (Boolean.TRUE.equals(exists)) {
-                        return Mono.error(new UserAlreadyExistsException("User with idNumber " + idNumber + " already exists"));
+                    return iUserRepositoryPort.existsByIdNumber(user.getIdNumber());
+                })
+                .flatMap(existsIdNumber -> {
+                    if (Boolean.TRUE.equals(existsIdNumber)) {
+                        return Mono.error(new UserAlreadyExistsException(
+                                "User with idNumber " + user.getIdNumber() + " already exists"));
                     }
-                    return Mono.just(false);
+                    return Mono.just(user);
                 });
     }
 

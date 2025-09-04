@@ -1,60 +1,94 @@
 package co.com.pragma.api;
 
-import org.assertj.core.api.Assertions;
+import co.com.pragma.api.dto.UserDTO;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.mockito.Mockito;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.server.ServerResponse;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-@ContextConfiguration(classes = {RouterRest.class, UserHandler.class})
-@WebFluxTest
+import java.math.BigDecimal;
+import java.net.URI;
+import java.time.LocalDate;
+
 class RouterRestTest {
 
-    @Autowired
     private WebTestClient webTestClient;
+    private UserHandler userHandler;
 
-    @Test
-    void testListenGETUseCase() {
-        webTestClient.get()
-                .uri("/api/usecase/path")
-                .accept(MediaType.APPLICATION_JSON)
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .value(userResponse -> {
-                            Assertions.assertThat(userResponse).isEmpty();
-                        }
-                );
+    @BeforeEach
+    void setUp() {
+        userHandler = Mockito.mock(UserHandler.class);
+        RouterRest routerRest = new RouterRest();
+
+        webTestClient = WebTestClient.bindToRouterFunction(
+                routerRest.routerFunction(userHandler)
+        ).build();
     }
 
     @Test
-    void testListenGETOtherUseCase() {
+    void shouldRouteToGetAllUsers() {
+        UserDTO user = new UserDTO(
+                "123",
+                "John",
+                "Doe",
+                "john.doe@example.com",
+                LocalDate.of(1990, 1, 1),
+                "123 Street",
+                "3001234567",
+                (byte) 1,
+                BigDecimal.valueOf(5000)
+        );
+
+        Mockito.when(userHandler.getAllUsers(Mockito.any()))
+                .thenReturn(ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Flux.just(user), UserDTO.class));
+
         webTestClient.get()
-                .uri("/api/otherusercase/path")
-                .accept(MediaType.APPLICATION_JSON)
+                .uri("/api/v1/users")
                 .exchange()
                 .expectStatus().isOk()
-                .expectBody(String.class)
-                .value(userResponse -> {
-                            Assertions.assertThat(userResponse).isEmpty();
-                        }
-                );
+                .expectHeader().contentType(MediaType.APPLICATION_JSON)
+                .expectBody()
+                .jsonPath("$[0].name").isEqualTo("John");
+
+        Mockito.verify(userHandler).getAllUsers(Mockito.any());
     }
 
     @Test
-    void testListenPOSTUseCase() {
+    void shouldRouteToSaveUser() {
+        UserDTO user = new UserDTO(
+                "123",
+                "John",
+                "Doe",
+                "john.doe@example.com",
+                LocalDate.of(1990, 1, 1),
+                "123 Street",
+                "3001234567",
+                (byte) 1,
+                BigDecimal.valueOf(5000)
+        );
+
+        Mockito.when(userHandler.save(Mockito.any()))
+                .thenReturn(ServerResponse.created(URI.create("/api/v1/users"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Mono.just(user), UserDTO.class));
+
         webTestClient.post()
-                .uri("/api/usecase/otherpath")
-                .accept(MediaType.APPLICATION_JSON)
-                .bodyValue("")
+                .uri("/api/v1/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(BodyInserters.fromValue(user))
                 .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .value(userResponse -> {
-                            Assertions.assertThat(userResponse).isEmpty();
-                        }
-                );
+                .expectStatus().isCreated()
+                .expectHeader().contentType(MediaType.APPLICATION_JSON)
+                .expectBody()
+                .jsonPath("$.email").isEqualTo("john.doe@example.com");
+
+        Mockito.verify(userHandler).save(Mockito.any());
     }
 }
