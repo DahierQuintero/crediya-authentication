@@ -24,7 +24,7 @@ public class UserUseCase implements IUserUseCase {
             logger.info(traceId, "Iniciando caso de uso de guardado de usuario. ID: {} | Email: {}",
                     user.getIdUser(), user.getEmail());
 
-            return validateUserDoesNotExist(user, traceId)
+            return validateUserDoesNotExist(user)
                     .flatMap(validUser -> saveUserToRepository(validUser, traceId))
                     .doOnSuccess(savedUser ->
                             logger.info(traceId, "Caso de uso de guardado de usuario finalizado exitosamente"))
@@ -49,7 +49,7 @@ public class UserUseCase implements IUserUseCase {
         });
     }
 
-    private Mono<User> validateUserDoesNotExist(User user, String traceId) {
+    private Mono<User> validateUserDoesNotExist(User user) {
         return iUserRepositoryPort.existsByIdUser(user.getIdUser())
                 .flatMap(existsId -> {
                     if (Boolean.TRUE.equals(existsId)) {
